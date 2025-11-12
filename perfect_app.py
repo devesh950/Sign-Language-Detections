@@ -613,6 +613,9 @@ def get_detection():
     return jsonify(current_detection)
 
 if __name__ == '__main__':
+    # Get port from environment variable (for Render deployment) or use 5000 for local
+    port = int(os.environ.get('PORT', 5000))
+    
     print("\n" + "="*70)
     print("🎉 PERFECT SIGN LANGUAGE DETECTION APP")
     print("="*70)
@@ -624,14 +627,16 @@ if __name__ == '__main__':
     print("   • Real-time detection")
     print("   • Network access from phone/tablet")
     print("\n📱 ACCESS FROM:")
-    print("   • This computer:  http://localhost:5000")
-    print("   • Phone/Tablet:   http://192.168.88.119:5000")
+    print(f"   • Server running on port: {port}")
+    if port == 5000:
+        print("   • This computer:  http://localhost:5000")
+        print("   • Phone/Tablet:   http://YOUR_LOCAL_IP:5000")
     print("\n💡 Open the URL in your browser and click 'Start Camera'!")
     print("\nPress Ctrl+C to stop")
     print("="*70 + "\n")
     
     try:
-        app.run(host='0.0.0.0', port=5000, debug=False, threaded=True, use_reloader=False)
+        app.run(host='0.0.0.0', port=port, debug=False, threaded=True, use_reloader=False)
     finally:
         is_camera_running = False
         if camera:
