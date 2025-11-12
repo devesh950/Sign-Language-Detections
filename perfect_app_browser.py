@@ -421,6 +421,14 @@ HTML_TEMPLATE = """
         // Start camera
         async function startCamera() {
             try {
+                console.log('Requesting camera access...');
+                
+                // Check if getUserMedia is supported
+                if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                    alert('❌ Camera not supported in this browser. Please use Chrome, Firefox, or Edge.');
+                    return;
+                }
+                
                 stream = await navigator.mediaDevices.getUserMedia({ 
                     video: { 
                         width: { ideal: 640 },
@@ -429,7 +437,17 @@ HTML_TEMPLATE = """
                     } 
                 });
                 
+                console.log('Camera access granted');
                 videoElement.srcObject = stream;
+                
+                // Wait for video to load
+                await new Promise((resolve) => {
+                    videoElement.onloadedmetadata = () => {
+                        videoElement.play();
+                        resolve();
+                    };
+                });
+                
                 isRunning = true;
                 
                 // Set canvas size
@@ -442,12 +460,24 @@ HTML_TEMPLATE = """
                 document.getElementById('statusDot').classList.add('active');
                 document.getElementById('statusText').textContent = 'Camera Running';
                 
+                console.log('Starting detection loop...');
+                
                 // Start detection loop
                 startDetection();
                 
             } catch (error) {
-                alert('❌ Camera access denied. Please allow camera access and try again.');
                 console.error('Camera error:', error);
+                let errorMsg = '❌ Camera Error: ';
+                if (error.name === 'NotAllowedError') {
+                    errorMsg += 'Camera access denied. Please allow camera permissions in your browser.';
+                } else if (error.name === 'NotFoundError') {
+                    errorMsg += 'No camera found on this device.';
+                } else if (error.name === 'NotReadableError') {
+                    errorMsg += 'Camera is already in use by another application.';
+                } else {
+                    errorMsg += error.message || 'Unknown error occurred.';
+                }
+                alert(errorMsg);
             }
         }
 
