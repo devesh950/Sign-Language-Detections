@@ -1,0 +1,42 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+.venv/
+venv/
+ENV/
+*.egg-info/
+dist/
+build/
+
+# Model artifacts - KEEP FOR DEPLOYMENT
+# sign_model.h5  (needed for Streamlit Cloud)
+# labels.pkl     (needed for Streamlit Cloud)
+
+# Training data - Don't upload raw images
+Gesture Image Data/
+Gesture Image Pre-Processed Data/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Streamlit
+.streamlit/secrets.toml
+
+# Logs
+*.log
+streamlit_log.txt
+
+# Temporary files
+test_*.py
