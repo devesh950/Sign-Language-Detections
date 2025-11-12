@@ -5,8 +5,6 @@ import os
 os.environ['KERAS_BACKEND'] = 'jax'
 
 from live_sign_detect import Detector
-import pyttsx3
-import threading
 from PIL import Image
 
 # Page configuration
@@ -44,87 +42,29 @@ st.markdown("""
         transform: translateY(-2px);
         box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
     }
-    .detection-box {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        padding: 2rem;
-        border-radius: 15px;
-        text-align: center;
-        color: white;
-        margin: 1rem 0;
-    }
-    .detection-label {
-        font-size: 3rem;
-        font-weight: bold;
-        margin-bottom: 0.5rem;
-    }
-    .detection-confidence {
-        font-size: 1.5rem;
-        opacity: 0.9;
-    }
-    .sidebar .sidebar-content {
-        background: linear-gradient(180deg, #667eea 0%, #764ba2 100%);
-    }
 </style>
 """, unsafe_allow_html=True)
 
 # Initialize session state
 if 'detector' not in st.session_state:
-    with st.spinner('🔄 Loading AI model...'):
-        st.session_state.detector = Detector(
-            model_path='sign_model.h5',
-            labels_path='labels.pkl',
-            buffer_len=5,
-            min_detection_confidence=0.7,
-            min_tracking_confidence=0.7
-        )
-    st.success('✅ Model loaded successfully!')
+    with st.spinner("🔄 Loading AI model... This may take a moment..."):
+        st.session_state.detector = Detector()
+        st.success("✅ Model loaded successfully!")
 
-if 'camera_active' not in st.session_state:
-    st.session_state.camera_active = False
-if 'voice_enabled' not in st.session_state:
-    st.session_state.voice_enabled = True
+if 'current_detection' not in st.session_state:
+    st.session_state.current_detection = {"label": "No detection yet", "confidence": 0.0}
+
 if 'show_subtitles' not in st.session_state:
     st.session_state.show_subtitles = True
-if 'last_spoken' not in st.session_state:
-    st.session_state.last_spoken = ""
-if 'current_detection' not in st.session_state:
-    st.session_state.current_detection = {"label": "No hand detected", "confidence": 0.0}
-
-# Voice synthesis function (runs in background)
-def speak_async(text):
-    def speak_thread():
-        try:
-            engine = pyttsx3.init()
-            engine.setProperty('rate', 150)
-            engine.say(text)
-            engine.runAndWait()
-            engine.stop()
-        except:
-            pass
-    
-    thread = threading.Thread(target=speak_thread, daemon=True)
-    thread.start()
 
 # Main header
 st.markdown('<h1 class="main-header">🤟 Sign Language Detection</h1>', unsafe_allow_html=True)
 
+st.info("📸 **How to use**: Take a photo showing a clear hand gesture, then click 'Detect Sign Language' to analyze it!")
+
 # Sidebar
 with st.sidebar:
     st.markdown("### 🎛️ Controls")
-    
-    # Camera control
-    if st.button("📷 Start Camera" if not st.session_state.camera_active else "⏹️ Stop Camera"):
-        st.session_state.camera_active = not st.session_state.camera_active
-        if not st.session_state.camera_active:
-            st.session_state.current_detection = {"label": "Camera stopped", "confidence": 0.0}
-    
-    st.markdown("---")
-    
-    # Voice toggle
-    voice_label = "🔊 Voice: ON" if st.session_state.voice_enabled else "🔇 Voice: OFF"
-    if st.button(voice_label):
-        st.session_state.voice_enabled = not st.session_state.voice_enabled
-        st.rerun()
     
     # Subtitles toggle
     subtitle_label = "📝 Subtitles: ON" if st.session_state.show_subtitles else "📝 Subtitles: OFF"
@@ -147,7 +87,7 @@ with st.sidebar:
     - Good lighting (face light source)
     - Keep hand 30-60cm from camera
     - Show full hand clearly
-    - Hold gesture steady 1-2 seconds
+    - Hold gesture steady when taking photo
     - Use plain background
     """)
     
@@ -164,37 +104,31 @@ with st.sidebar:
 col1, col2 = st.columns([2, 1])
 
 with col1:
-    st.markdown("### 📹 Camera Feed")
-    camera_placeholder = st.empty()
+    st.markdown("### 📸 Take a Photo")
     
-    if st.session_state.camera_active:
-        # Open camera
-        cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
-        cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
-        cap.set(cv2.CAP_PROP_FPS, 30)
+    # Use browser camera input
+    camera_photo = st.camera_input("Show your hand gesture and click 'Take Photo'")
+    
+    if camera_photo is not None:
+        # Read the image
+        bytes_data = camera_photo.getvalue()
+        image = Image.open(camera_photo)
         
-        frame_count = 0
+        # Convert to numpy array
+        frame = np.array(image)
         
-        # Process frames
-        ret, frame = cap.read()
-        if ret:
-            frame_count += 1
-            
-            # Process every 2nd frame
-            if frame_count % 2 == 0:
+        # Convert RGB to BGR (OpenCV format)
+        frame_bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+        
+        # Button to analyze
+        if st.button("🔍 Detect Sign Language", type="primary", use_container_width=True):
+            with st.spinner("🤖 Analyzing gesture..."):
                 # Detect sign language
-                label, confidence, annotated_frame = st.session_state.detector.predict(frame)
+                label, confidence, annotated_frame = st.session_state.detector.predict(frame_bgr)
                 
                 # Update detection
                 if confidence >= 0.80:
                     st.session_state.current_detection = {"label": label, "confidence": confidence}
-                    
-                    # Voice output
-                    if st.session_state.voice_enabled and label != st.session_state.last_spoken:
-                        speak_async(label)
-                        st.session_state.last_spoken = label
-                        
                 elif confidence >= 0.60:
                     st.session_state.current_detection = {"label": f"{label} (uncertain)", "confidence": confidence}
                 else:
@@ -203,17 +137,12 @@ with col1:
                 # Convert BGR to RGB for display
                 annotated_frame_rgb = cv2.cvtColor(annotated_frame, cv2.COLOR_BGR2RGB)
                 
-                # Display frame
-                camera_placeholder.image(annotated_frame_rgb, channels="RGB", use_container_width=True)
-            else:
-                # Just show the frame without processing
-                frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                camera_placeholder.image(frame_rgb, channels="RGB", use_container_width=True)
-        
-        cap.release()
+                # Show annotated image
+                st.image(annotated_frame_rgb, caption="Analyzed Image with Hand Landmarks", use_container_width=True)
+                
+                st.rerun()
     else:
-        # Show placeholder when camera is off
-        camera_placeholder.info("📷 Click 'Start Camera' in the sidebar to begin detection")
+        st.info("👆 Click the camera button above to take a photo of your hand gesture")
 
 with col2:
     st.markdown("### 🎯 Detection Results")
@@ -225,10 +154,13 @@ with col2:
         # Color based on confidence
         if detection['confidence'] >= 0.80:
             box_color = "background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);"
+            confidence_emoji = "✅"
         elif detection['confidence'] >= 0.60:
             box_color = "background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);"
+            confidence_emoji = "⚠️"
         else:
             box_color = "background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);"
+            confidence_emoji = "❌"
         
         st.markdown(f"""
         <div style="{box_color} padding: 2rem; border-radius: 15px; text-align: center; color: white; margin: 1rem 0;">
@@ -236,7 +168,7 @@ with col2:
                 {detection['label']}
             </div>
             <div style="font-size: 1.5rem; opacity: 0.9;">
-                Confidence: {detection['confidence']*100:.1f}%
+                {confidence_emoji} Confidence: {detection['confidence']*100:.1f}%
             </div>
         </div>
         """, unsafe_allow_html=True)
@@ -244,26 +176,42 @@ with col2:
         # Status indicators
         st.markdown("### 📊 Status")
         
-        # Voice status
-        voice_status = "🔊 Voice Active" if st.session_state.voice_enabled else "🔇 Voice Muted"
-        voice_color = "green" if st.session_state.voice_enabled else "gray"
-        st.markdown(f":{voice_color}[{voice_status}]")
-        
-        # Camera status
-        camera_status = "📹 Camera Running" if st.session_state.camera_active else "⏹️ Camera Stopped"
-        camera_color = "green" if st.session_state.camera_active else "gray"
-        st.markdown(f":{camera_color}[{camera_status}]")
-        
         # Confidence level
         conf_val = detection['confidence'] * 100
         if conf_val >= 80:
-            st.markdown(f":green[✅ High Confidence ({conf_val:.1f}%)]")
+            st.success(f"✅ High Confidence ({conf_val:.1f}%)")
+            st.markdown("**Result**: Very likely correct!")
         elif conf_val >= 60:
-            st.markdown(f":orange[⚠️ Medium Confidence ({conf_val:.1f}%)]")
+            st.warning(f"⚠️ Medium Confidence ({conf_val:.1f}%)")
+            st.markdown("**Result**: Possibly correct, try retaking")
         else:
-            st.markdown(f":red[❌ Low Confidence ({conf_val:.1f}%)]")
+            st.error(f"❌ Low Confidence ({conf_val:.1f}%)")
+            st.markdown("**Result**: Unclear, please retake photo")
+        
+        # Tips based on result
+        if conf_val < 80:
+            st.markdown("---")
+            st.markdown("### 💡 Improve Results")
+            st.info("""
+            **Try these tips:**
+            - Improve lighting
+            - Show full hand (all fingers visible)
+            - Plain background
+            - Hold hand still and clear
+            - Check supported gestures in sidebar
+            """)
     else:
         st.info("📝 Subtitles are disabled. Enable them in the sidebar.")
+    
+    # Show recent detection history
+    st.markdown("---")
+    st.markdown("### 📜 Detection Info")
+    
+    if st.session_state.current_detection['label'] != "No detection yet":
+        st.markdown(f"**Last Detected**: {st.session_state.current_detection['label']}")
+        st.progress(st.session_state.current_detection['confidence'])
+    else:
+        st.markdown("*Take a photo to start detecting*")
 
 # Footer
 st.markdown("---")
@@ -271,11 +219,6 @@ st.markdown("""
 <div style="text-align: center; color: gray; padding: 1rem;">
     <p>🤟 Sign Language Detection System | Built with Streamlit & MediaPipe</p>
     <p>💡 Tip: Use good lighting and clear hand gestures for best results!</p>
+    <p>📱 Works on mobile devices too - just grant camera permission!</p>
 </div>
 """, unsafe_allow_html=True)
-
-# Auto-refresh if camera is active
-if st.session_state.camera_active:
-    import time
-    time.sleep(0.1)
-    st.rerun()
