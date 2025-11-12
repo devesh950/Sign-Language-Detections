@@ -503,41 +503,73 @@ HTML_TEMPLATE = """
             document.getElementById('subtitleOverlay').classList.remove('show');
         }
 
-        // Start detection loop
+        // Start detection loop - OPTIMIZED FOR SPEED
         function startDetection() {
+            let frameCount = 0;
+            let isProcessing = false;
+            
             detectionInterval = setInterval(async () => {
-                if (!isRunning) return;
+                if (!isRunning || isProcessing) {
+                    return; // Skip if already processing
+                }
                 
-                // Draw video frame to canvas
-                ctx.drawImage(videoElement, 0, 0, canvasElement.width, canvasElement.height);
+                frameCount++;
                 
-                // Convert canvas to base64
-                const imageData = canvasElement.toDataURL('image/jpeg', 0.8);
+                // Process every 3rd frame (333ms) to reduce server load
+                if (frameCount % 3 !== 0) {
+                    return;
+                }
                 
-                // Send to server for processing
+                isProcessing = true;
+                
                 try {
+                    // Draw video frame to canvas
+                    ctx.drawImage(videoElement, 0, 0, canvasElement.width, canvasElement.height);
+                    
+                    // Convert canvas to base64 with lower quality for speed
+                    const imageData = canvasElement.toDataURL('image/jpeg', 0.5);
+                    
+                    // Send to server with timeout
+                    const controller = new AbortController();
+                    const timeoutId = setTimeout(() => controller.abort(), 3000); // 3 sec timeout
+                    
                     const response = await fetch('/process_frame', {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json',
                         },
                         body: JSON.stringify({
-                            image: imageData,
-                            show_subtitles: showSubtitles,
-                            voice_enabled: voiceEnabled
-                        })
+                            image: imageData
+                        }),
+                        signal: controller.signal
                     });
+                    
+                    clearTimeout(timeoutId);
+                    
+                    if (!response.ok) {
+                        console.error(`Server error: ${response.status}`);
+                        console.log('Detection update skipped');
+                        return;
+                    }
                     
                     const data = await response.json();
                     
                     if (data.success) {
                         updateDetection(data);
+                    } else {
+                        console.error('Detection failed:', data.error);
                     }
                     
                 } catch (error) {
-                    console.error('Detection error:', error);
+                    if (error.name === 'AbortError') {
+                        console.error('Request timeout');
+                    } else {
+                        console.error('Detection error:', error);
+                    }
+                } finally {
+                    isProcessing = false;
                 }
-            }, 100); // Process 10 frames per second
+            }, 100); // Check every 100ms, but process every 300ms
         }
 
         // Update detection display
@@ -609,35 +641,54 @@ def index():
     """Main page"""
     return render_template_string(HTML_TEMPLATE)
 
+@app.route('/health')
+def health():
+    """Health check endpoint"""
+    return jsonify({"status": "ok", "model_loaded": detector is not None})
+
 @app.route('/process_frame', methods=['POST'])
 def process_frame():
-    """Process single frame from browser camera"""
+    """Process single frame from browser camera - FAST VERSION"""
     try:
-        data = request.get_json()
+        # Quick validation
+        if not detector:
+            return jsonify({"success": False, "error": "Model not loaded"}), 500
         
-        # Decode base64 image
-        image_data = data['image'].split(',')[1]
-        image_bytes = base64.b64decode(image_data)
+        data = request.get_json(force=True)
+        if not data or 'image' not in data:
+            return jsonify({"success": False, "error": "No image data"}), 400
+        
+        # Decode base64 image (with timeout protection)
+        try:
+            image_data = data['image'].split(',')[1]
+            image_bytes = base64.b64decode(image_data)
+        except Exception as e:
+            return jsonify({"success": False, "error": "Invalid image format"}), 400
         
         # Convert to numpy array
         nparr = np.frombuffer(image_bytes, np.uint8)
         frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
         
         if frame is None:
-            return jsonify({"success": False, "error": "Invalid image"})
+            return jsonify({"success": False, "error": "Failed to decode image"}), 400
+        
+        # Resize frame for faster processing (smaller = faster)
+        frame = cv2.resize(frame, (320, 240))
         
         # Process frame with detector
         label, confidence = detector.predict(frame)
         
         return jsonify({
             "success": True,
-            "label": label,
+            "label": str(label),
             "confidence": float(confidence)
         })
         
     except Exception as e:
         print(f"❌ Frame processing error: {e}")
-        return jsonify({"success": False, "error": str(e)})
+        import traceback
+        traceback.print_exc()
+        return jsonify({"success": False, "error": "Processing failed"}), 500
 
 if __name__ == '__main__':
     print("=" * 70)
