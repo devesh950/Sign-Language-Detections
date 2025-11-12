@@ -2,7 +2,6 @@ import streamlit as st
 import cv2
 import numpy as np
 import os
-import time
 os.environ['KERAS_BACKEND'] = 'jax'
 
 from live_sign_detect import Detector
@@ -10,7 +9,7 @@ from PIL import Image
 
 # Page configuration
 st.set_page_config(
-    page_title="Live Sign Language Detection",
+    page_title="Sign Language Detection",
     page_icon="🤟",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -58,34 +57,18 @@ if 'current_detection' not in st.session_state:
 if 'show_subtitles' not in st.session_state:
     st.session_state.show_subtitles = True
 
-if 'is_running' not in st.session_state:
-    st.session_state.is_running = False
-
 # Main header
-st.markdown('<h1 class="main-header">🤟 Live Sign Language Detection</h1>', unsafe_allow_html=True)
+st.markdown('<h1 class="main-header">🤟 Sign Language Detection</h1>', unsafe_allow_html=True)
+
+st.info("📸 **How to use**: Take a photo showing a clear hand gesture, then click 'Detect Sign Language' to analyze it!")
 
 # Sidebar
 with st.sidebar:
     st.markdown("### 🎛️ Controls")
     
-    # START/STOP button
-    if st.button("🎬 START LIVE DETECTION" if not st.session_state.is_running else "⏹️ STOP DETECTION", 
-                 type="primary", use_container_width=True):
-        st.session_state.is_running = not st.session_state.is_running
-        st.rerun()
-    
-    # Status indicator
-    if st.session_state.is_running:
-        st.success("🟢 **LIVE** - Continuously detecting...")
-        st.info("💡 **Tip**: Keep clicking 'Take Photo' button repeatedly for continuous detection!")
-    else:
-        st.info("⚪ **STOPPED** - Click START to begin")
-    
-    st.markdown("---")
-    
     # Subtitles toggle
     subtitle_label = "📝 Subtitles: ON" if st.session_state.show_subtitles else "📝 Subtitles: OFF"
-    if st.button(subtitle_label, use_container_width=True):
+    if st.button(subtitle_label):
         st.session_state.show_subtitles = not st.session_state.show_subtitles
         st.rerun()
     
@@ -98,15 +81,14 @@ with st.sidebar:
     
     st.markdown("---")
     
-    st.markdown("### 💡 Tips for Best Results")
+    st.markdown("### 💡 Tips")
     st.info("""
-    **For accurate detection:**
-    - Good lighting (face the light)
-    - Hand 30-60cm from camera
+    **For best accuracy:**
+    - Good lighting (face light source)
+    - Keep hand 30-60cm from camera
     - Show full hand clearly
-    - Hold gesture steady
+    - Hold gesture steady when taking photo
     - Use plain background
-    - Keep clicking 'Take Photo' for continuous feed
     """)
     
     st.markdown("---")
@@ -122,27 +104,26 @@ with st.sidebar:
 col1, col2 = st.columns([2, 1])
 
 with col1:
-    st.markdown("### 📹 Live Camera Feed")
+    st.markdown("### 📸 Take a Photo")
     
-    if st.session_state.is_running:
-        st.success("✅ **LIVE MODE ACTIVE** - Keep clicking 'Take Photo' repeatedly for continuous detection!")
+    # Use browser camera input
+    camera_photo = st.camera_input("Show your hand gesture and click 'Take Photo'")
+    
+    if camera_photo is not None:
+        # Read the image
+        bytes_data = camera_photo.getvalue()
+        image = Image.open(camera_photo)
         
-        # Use browser camera input
-        camera_photo = st.camera_input("📸 Camera Active - Click 'Take Photo' repeatedly", key="live_camera")
+        # Convert to numpy array
+        frame = np.array(image)
         
-        if camera_photo is not None:
-            # Read the image
-            bytes_data = camera_photo.getvalue()
-            image = Image.open(camera_photo)
-            
-            # Convert to numpy array
-            frame = np.array(image)
-            
-            # Convert RGB to BGR (OpenCV format)
-            frame_bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
-            
-            # Automatically detect
+        # Convert RGB to BGR (OpenCV format)
+        frame_bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+        
+        # Button to analyze
+        if st.button("🔍 Detect Sign Language", type="primary", use_container_width=True):
             with st.spinner("🤖 Analyzing gesture..."):
+                # Detect sign language
                 label, confidence, annotated_frame = st.session_state.detector.predict(frame_bgr)
                 
                 # Update detection
@@ -151,32 +132,20 @@ with col1:
                 elif confidence >= 0.60:
                     st.session_state.current_detection = {"label": f"{label} (uncertain)", "confidence": confidence}
                 else:
-                    st.session_state.current_detection = {"label": "No clear sign", "confidence": confidence}
+                    st.session_state.current_detection = {"label": "No clear sign detected", "confidence": confidence}
                 
                 # Convert BGR to RGB for display
                 annotated_frame_rgb = cv2.cvtColor(annotated_frame, cv2.COLOR_BGR2RGB)
                 
                 # Show annotated image
-                st.image(annotated_frame_rgb, caption="🔍 Detected Frame with Hand Landmarks", use_container_width=True)
-        else:
-            st.info("📸 Waiting for first photo... Click the 'Take Photo' button above!")
-            st.markdown("**💡 PRO TIP**: Click 'Take Photo' repeatedly for near-live detection!")
+                st.image(annotated_frame_rgb, caption="Analyzed Image with Hand Landmarks", use_container_width=True)
+                
+                st.rerun()
     else:
-        st.warning("⏹️ **Camera Stopped**")
-        st.info("👉 Click **START LIVE DETECTION** in the sidebar to begin!")
-        st.markdown("""
-        ### How Live Detection Works:
-        1. Click **START** button in sidebar
-        2. Allow camera access when prompted
-        3. Keep clicking **'Take Photo'** button repeatedly
-        4. Each click = instant analysis
-        5. Results appear in real-time on the right →
-        
-        **This gives you continuous detection by rapidly taking photos!**
-        """)
+        st.info("👆 Click the camera button above to take a photo of your hand gesture")
 
 with col2:
-    st.markdown("### 🎯 Live Detection Results")
+    st.markdown("### 🎯 Detection Results")
     
     # Detection display
     if st.session_state.show_subtitles:
@@ -199,13 +168,13 @@ with col2:
                 {detection['label']}
             </div>
             <div style="font-size: 1.5rem; opacity: 0.9;">
-                {confidence_emoji} {detection['confidence']*100:.1f}%
+                {confidence_emoji} Confidence: {detection['confidence']*100:.1f}%
             </div>
         </div>
         """, unsafe_allow_html=True)
         
         # Status indicators
-        st.markdown("### 📊 Confidence Status")
+        st.markdown("### 📊 Status")
         
         # Confidence level
         conf_val = detection['confidence'] * 100
@@ -214,34 +183,42 @@ with col2:
             st.markdown("**Result**: Very likely correct!")
         elif conf_val >= 60:
             st.warning(f"⚠️ Medium Confidence ({conf_val:.1f}%)")
-            st.markdown("**Result**: Possibly correct")
+            st.markdown("**Result**: Possibly correct, try retaking")
         else:
             st.error(f"❌ Low Confidence ({conf_val:.1f}%)")
-            st.markdown("**Result**: Unclear gesture")
-        
-        # Progress bar
-        st.progress(detection['confidence'])
+            st.markdown("**Result**: Unclear, please retake photo")
         
         # Tips based on result
         if conf_val < 80:
             st.markdown("---")
             st.markdown("### 💡 Improve Results")
             st.info("""
-            **Try these:**
-            - Better lighting
-            - Show full hand
+            **Try these tips:**
+            - Improve lighting
+            - Show full hand (all fingers visible)
             - Plain background
-            - Hold steady
-            - Check supported gestures
+            - Hold hand still and clear
+            - Check supported gestures in sidebar
             """)
     else:
-        st.info("📝 Subtitles disabled. Enable in sidebar.")
+        st.info("📝 Subtitles are disabled. Enable them in the sidebar.")
+    
+    # Show recent detection history
+    st.markdown("---")
+    st.markdown("### 📜 Detection Info")
+    
+    if st.session_state.current_detection['label'] != "No detection yet":
+        st.markdown(f"**Last Detected**: {st.session_state.current_detection['label']}")
+        st.progress(st.session_state.current_detection['confidence'])
+    else:
+        st.markdown("*Take a photo to start detecting*")
 
 # Footer
 st.markdown("---")
 st.markdown("""
 <div style="text-align: center; color: gray; padding: 1rem;">
-    <p>🤟 Live Sign Language Detection | Built with Streamlit & MediaPipe</p>
-    <p>💡 Keep clicking 'Take Photo' for continuous detection!</p>
+    <p>🤟 Sign Language Detection System | Built with Streamlit & MediaPipe</p>
+    <p>💡 Tip: Use good lighting and clear hand gestures for best results!</p>
+    <p>📱 Works on mobile devices too - just grant camera permission!</p>
 </div>
 """, unsafe_allow_html=True)
