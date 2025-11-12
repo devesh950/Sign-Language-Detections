@@ -4,6 +4,8 @@ import numpy as np
 import os
 os.environ['KERAS_BACKEND'] = 'jax'
 
+from streamlit_webrtc import webrtc_streamer, VideoTransformerBase, WebRtcMode
+import av
 from live_sign_detect import Detector
 from PIL import Image
 
@@ -57,10 +59,37 @@ if 'current_detection' not in st.session_state:
 if 'show_subtitles' not in st.session_state:
     st.session_state.show_subtitles = True
 
-# Main header
-st.markdown('<h1 class="main-header">🤟 Sign Language Detection</h1>', unsafe_allow_html=True)
+# Video transformer class
+class SignLanguageTransformer(VideoTransformerBase):
+    def __init__(self):
+        self.detector = st.session_state.detector
+        self.frame_count = 0
+        
+    def transform(self, frame):
+        img = frame.to_ndarray(format="bgr24")
+        
+        # Process every 2nd frame for performance
+        self.frame_count += 1
+        if self.frame_count % 2 == 0:
+            # Detect sign language
+            label, confidence, annotated_frame = self.detector.predict(img)
+            
+            # Update session state
+            if confidence >= 0.80:
+                st.session_state.current_detection = {"label": label, "confidence": confidence}
+            elif confidence >= 0.60:
+                st.session_state.current_detection = {"label": f"{label} (uncertain)", "confidence": confidence}
+            else:
+                st.session_state.current_detection = {"label": "No clear sign detected", "confidence": confidence}
+            
+            return av.VideoFrame.from_ndarray(annotated_frame, format="bgr24")
+        else:
+            return av.VideoFrame.from_ndarray(img, format="bgr24")
 
-st.info("📸 **How to use**: Take a photo showing a clear hand gesture, then click 'Detect Sign Language' to analyze it!")
+# Main header
+st.markdown('<h1 class="main-header">🤟 Sign Language Detection - Live</h1>', unsafe_allow_html=True)
+
+st.info("📹 **Click 'START' to begin live detection** | Click 'STOP' to pause | Show hand gestures to camera")
 
 # Sidebar
 with st.sidebar:
@@ -87,7 +116,7 @@ with st.sidebar:
     - Good lighting (face light source)
     - Keep hand 30-60cm from camera
     - Show full hand clearly
-    - Hold gesture steady when taking photo
+    - Hold gesture steady 1-2 seconds
     - Use plain background
     """)
     
@@ -104,45 +133,16 @@ with st.sidebar:
 col1, col2 = st.columns([2, 1])
 
 with col1:
-    st.markdown("### 📸 Take a Photo")
+    st.markdown("### 📹 Live Camera Feed")
     
-    # Use browser camera input
-    camera_photo = st.camera_input("Show your hand gesture and click 'Take Photo'")
-    
-    if camera_photo is not None:
-        # Read the image
-        bytes_data = camera_photo.getvalue()
-        image = Image.open(camera_photo)
-        
-        # Convert to numpy array
-        frame = np.array(image)
-        
-        # Convert RGB to BGR (OpenCV format)
-        frame_bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
-        
-        # Button to analyze
-        if st.button("🔍 Detect Sign Language", type="primary", use_container_width=True):
-            with st.spinner("🤖 Analyzing gesture..."):
-                # Detect sign language
-                label, confidence, annotated_frame = st.session_state.detector.predict(frame_bgr)
-                
-                # Update detection
-                if confidence >= 0.80:
-                    st.session_state.current_detection = {"label": label, "confidence": confidence}
-                elif confidence >= 0.60:
-                    st.session_state.current_detection = {"label": f"{label} (uncertain)", "confidence": confidence}
-                else:
-                    st.session_state.current_detection = {"label": "No clear sign detected", "confidence": confidence}
-                
-                # Convert BGR to RGB for display
-                annotated_frame_rgb = cv2.cvtColor(annotated_frame, cv2.COLOR_BGR2RGB)
-                
-                # Show annotated image
-                st.image(annotated_frame_rgb, caption="Analyzed Image with Hand Landmarks", use_container_width=True)
-                
-                st.rerun()
-    else:
-        st.info("👆 Click the camera button above to take a photo of your hand gesture")
+    # WebRTC video streamer
+    webrtc_ctx = webrtc_streamer(
+        key="sign-language-detection",
+        mode=WebRtcMode.SENDRECV,
+        video_transformer_factory=SignLanguageTransformer,
+        media_stream_constraints={"video": True, "audio": False},
+        async_processing=True,
+    )
 
 with col2:
     st.markdown("### 🎯 Detection Results")
@@ -176,6 +176,12 @@ with col2:
         # Status indicators
         st.markdown("### 📊 Status")
         
+        # Camera status
+        if webrtc_ctx.state.playing:
+            st.success("📹 Camera Active")
+        else:
+            st.info("⏹️ Camera Stopped")
+        
         # Confidence level
         conf_val = detection['confidence'] * 100
         if conf_val >= 80:
@@ -183,27 +189,14 @@ with col2:
             st.markdown("**Result**: Very likely correct!")
         elif conf_val >= 60:
             st.warning(f"⚠️ Medium Confidence ({conf_val:.1f}%)")
-            st.markdown("**Result**: Possibly correct, try retaking")
+            st.markdown("**Result**: Possibly correct")
         else:
             st.error(f"❌ Low Confidence ({conf_val:.1f}%)")
-            st.markdown("**Result**: Unclear, please retake photo")
-        
-        # Tips based on result
-        if conf_val < 80:
-            st.markdown("---")
-            st.markdown("### 💡 Improve Results")
-            st.info("""
-            **Try these tips:**
-            - Improve lighting
-            - Show full hand (all fingers visible)
-            - Plain background
-            - Hold hand still and clear
-            - Check supported gestures in sidebar
-            """)
+            st.markdown("**Result**: Unclear")
     else:
         st.info("📝 Subtitles are disabled. Enable them in the sidebar.")
     
-    # Show recent detection history
+    # Detection info
     st.markdown("---")
     st.markdown("### 📜 Detection Info")
     
@@ -211,7 +204,7 @@ with col2:
         st.markdown(f"**Last Detected**: {st.session_state.current_detection['label']}")
         st.progress(st.session_state.current_detection['confidence'])
     else:
-        st.markdown("*Take a photo to start detecting*")
+        st.markdown("*Click START to begin detecting*")
 
 # Footer
 st.markdown("---")
@@ -219,6 +212,6 @@ st.markdown("""
 <div style="text-align: center; color: gray; padding: 1rem;">
     <p>🤟 Sign Language Detection System | Built with Streamlit & MediaPipe</p>
     <p>💡 Tip: Use good lighting and clear hand gestures for best results!</p>
-    <p>📱 Works on mobile devices too - just grant camera permission!</p>
+    <p>📱 Works on desktop browsers with camera access!</p>
 </div>
 """, unsafe_allow_html=True)
