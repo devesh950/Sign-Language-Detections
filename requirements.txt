@@ -11,5 +11,6 @@ gunicorn==21.2.0
 gevent==24.2.1
 
 # JAX backend for Keras (required by live_sign_detect.py)
-jax==0.4.20
-jaxlib==0.4.20
+# Using compatible versions: Keras 3.12.0 requires JAX 0.4.31+
+jax==0.4.31
+jaxlib==0.4.31
