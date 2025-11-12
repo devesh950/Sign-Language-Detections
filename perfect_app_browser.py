@@ -641,6 +641,76 @@ def index():
     """Main page"""
     return render_template_string(HTML_TEMPLATE)
 
+@app.route('/test')
+def test():
+    """Simple camera test page"""
+    return """
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Camera Test</title>
+        <style>
+            body { font-family: Arial; padding: 20px; background: #222; color: white; }
+            button { padding: 15px 30px; font-size: 18px; margin: 10px; cursor: pointer; }
+            video { width: 640px; height: 480px; background: black; }
+            #log { background: #333; padding: 15px; margin-top: 20px; font-family: monospace; }
+        </style>
+    </head>
+    <body>
+        <h1>🎥 Camera Test</h1>
+        <button onclick="testCamera()">Start Camera</button>
+        <br>
+        <video id="video" autoplay></video>
+        <div id="log"></div>
+        
+        <script>
+            function log(msg) {
+                document.getElementById('log').innerHTML += msg + '<br>';
+                console.log(msg);
+            }
+            
+            async function testCamera() {
+                try {
+                    log('🔍 Checking HTTPS: ' + (window.location.protocol === 'https:' ? 'YES ✅' : 'NO ❌'));
+                    log('🌐 URL: ' + window.location.href);
+                    log('📱 User Agent: ' + navigator.userAgent);
+                    
+                    if (!navigator.mediaDevices) {
+                        log('❌ navigator.mediaDevices not available');
+                        return;
+                    }
+                    
+                    log('✅ navigator.mediaDevices available');
+                    
+                    if (!navigator.mediaDevices.getUserMedia) {
+                        log('❌ getUserMedia not available');
+                        return;
+                    }
+                    
+                    log('✅ getUserMedia available');
+                    log('📹 Requesting camera access...');
+                    
+                    const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+                    
+                    log('✅ Camera access GRANTED!');
+                    log('📹 Stream active: ' + stream.active);
+                    log('🎬 Tracks: ' + stream.getTracks().length);
+                    
+                    document.getElementById('video').srcObject = stream;
+                    
+                    log('✅ SUCCESS! Camera is working!');
+                    
+                } catch (error) {
+                    log('❌ ERROR: ' + error.name);
+                    log('❌ Message: ' + error.message);
+                    log('❌ Stack: ' + error.stack);
+                }
+            }
+        </script>
+    </body>
+    </html>
+    """
+
 @app.route('/health')
 def health():
     """Health check endpoint"""
