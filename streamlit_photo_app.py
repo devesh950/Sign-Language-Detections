@@ -11,6 +11,8 @@ import keras
 import pickle
 import pyttsx3
 import threading
+import base64
+from io import BytesIO
 
 st.set_page_config(page_title="Sign Language Detection", page_icon="🤟", layout="wide", initial_sidebar_state="expanded")
 
@@ -82,6 +84,29 @@ def speak_gesture(text):
     except Exception as e:
         # Silently fail if voice not available
         st.session_state.voice_available = False
+
+def speak_gesture_cloud(text):
+    """Generate audio HTML for browser-based text-to-speech using gTTS"""
+    try:
+        from gtts import gTTS
+        # Create audio in memory
+        tts = gTTS(text=text, lang='en', slow=False)
+        audio_bytes = BytesIO()
+        tts.write_to_fp(audio_bytes)
+        audio_bytes.seek(0)
+        
+        # Convert to base64 for HTML embedding
+        audio_base64 = base64.b64encode(audio_bytes.read()).decode()
+        
+        # Create HTML audio element with autoplay
+        audio_html = f"""
+        <audio autoplay>
+            <source src="data:audio/mp3;base64,{audio_base64}" type="audio/mp3">
+        </audio>
+        """
+        return audio_html
+    except:
+        return ""
 
 def normalize_landmarks(hand_landmarks):
     """Normalize landmarks by translating to wrist and scaling"""
@@ -196,16 +221,10 @@ with col1:
                         if st.session_state.voice_enabled:
                             # Try system voice (local only)
                             threading.Thread(target=speak_gesture, args=(label,), daemon=True).start()
-                            # Also use browser speech synthesis (works on cloud!)
-                            st.markdown(f"""
-                            <script>
-                                if ('speechSynthesis' in window) {{
-                                    var msg = new SpeechSynthesisUtterance('{label}');
-                                    msg.rate = 1.0;
-                                    window.speechSynthesis.speak(msg);
-                                }}
-                            </script>
-                            """, unsafe_allow_html=True)
+                            # Use gTTS for cloud (generates audio file)
+                            audio_html = speak_gesture_cloud(label)
+                            if audio_html:
+                                st.markdown(audio_html, unsafe_allow_html=True)
                         
                         st.image(annotated, use_container_width=True)
                         st.success(f"✅ Detected: **{label}** (Confidence: {confidence*100:.1f}%)")
@@ -246,16 +265,10 @@ with col1:
                     if st.session_state.voice_enabled:
                         # Try system voice (local only)
                         threading.Thread(target=speak_gesture, args=(label,), daemon=True).start()
-                        # Also use browser speech synthesis (works on cloud!)
-                        st.markdown(f"""
-                        <script>
-                            if ('speechSynthesis' in window) {{
-                                var msg = new SpeechSynthesisUtterance('{label}');
-                                msg.rate = 1.0;
-                                window.speechSynthesis.speak(msg);
-                            }}
-                        </script>
-                        """, unsafe_allow_html=True)
+                        # Use gTTS for cloud (generates audio file)
+                        audio_html = speak_gesture_cloud(label)
+                        if audio_html:
+                            st.markdown(audio_html, unsafe_allow_html=True)
                     
                     st.image(annotated, use_container_width=True)
                     st.success(f"✅ Detected: **{label}** (Confidence: {confidence*100:.1f}%)")
