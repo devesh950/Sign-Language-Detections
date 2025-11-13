@@ -1,16 +1,14 @@
-# Flask deployment requirements (for Render.com)
-Flask==3.0.0
-opencv-python-headless==4.8.1.78
-mediapipe==0.10.9
-keras==3.12.0
-numpy==1.26.4
-pandas==2.1.4
-scikit-learn==1.3.2
-Pillow==10.1.0
-gunicorn==21.2.0
-gevent==24.2.1
+# Streamlit app requirements
+streamlit>=1.28.0
+opencv-python-headless>=4.8.0,<5.0.0
+mediapipe>=0.10.0,<0.11.0
+keras>=3.0.0,<4.0.0
+numpy>=1.24.0,<2.0.0
+Pillow>=10.0.0
+scikit-learn>=1.3.0
 
-# JAX backend for Keras (required by live_sign_detect.py)
-# Using compatible versions: Keras 3.12.0 requires JAX 0.4.31+
-jax==0.4.31
-jaxlib==0.4.31
+# Voice output
+pyttsx3>=2.90
+
+# JAX backend for Keras
+jax[cpu]>=0.4.20

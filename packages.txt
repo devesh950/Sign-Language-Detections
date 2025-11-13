@@ -1,0 +1,5 @@
+espeak
+libespeak1
+libespeak-dev
+libgl1-mesa-glx
+libglib2.0-0
