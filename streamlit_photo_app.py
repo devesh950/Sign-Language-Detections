@@ -46,6 +46,15 @@ if 'last_gesture' not in st.session_state:
     st.session_state.last_gesture = "None"
 if 'show_camera' not in st.session_state:
     st.session_state.show_camera = False
+if 'voice_available' not in st.session_state:
+    # Check if voice is available
+    try:
+        import pyttsx3
+        engine = pyttsx3.init()
+        engine.stop()
+        st.session_state.voice_available = True
+    except:
+        st.session_state.voice_available = False
 
 @st.cache_resource
 def load_model():
@@ -62,13 +71,17 @@ def load_model():
     return model, le, hands
 
 def speak_gesture(text):
+    """Speak gesture using text-to-speech (only works locally, not on Streamlit Cloud)"""
+    if not st.session_state.voice_available:
+        return
     try:
         engine = pyttsx3.init()
         engine.setProperty('rate', 150)
         engine.say(text)
         engine.runAndWait()
-    except:
-        pass
+    except Exception as e:
+        # Silently fail if voice not available
+        st.session_state.voice_available = False
 
 def normalize_landmarks(hand_landmarks):
     """Normalize landmarks by translating to wrist and scaling"""
@@ -131,6 +144,8 @@ with st.sidebar:
     st.markdown("### ⚙️ Control Panel")
     st.markdown("#### 🎤 Voice Output")
     st.session_state.voice_enabled = st.toggle("Enable Voice", value=st.session_state.voice_enabled)
+    if not st.session_state.voice_available:
+        st.warning("🔇 Voice unavailable on cloud. Works when running locally!")
     st.markdown("#### 💬 Show Gesture")
     st.session_state.subtitles_enabled = st.toggle("Show Detected Gesture", value=st.session_state.subtitles_enabled)
     st.markdown("---")
@@ -179,7 +194,18 @@ with col1:
                         st.session_state.detection_count += 1
                         
                         if st.session_state.voice_enabled:
+                            # Try system voice (local only)
                             threading.Thread(target=speak_gesture, args=(label,), daemon=True).start()
+                            # Also use browser speech synthesis (works on cloud!)
+                            st.markdown(f"""
+                            <script>
+                                if ('speechSynthesis' in window) {{
+                                    var msg = new SpeechSynthesisUtterance('{label}');
+                                    msg.rate = 1.0;
+                                    window.speechSynthesis.speak(msg);
+                                }}
+                            </script>
+                            """, unsafe_allow_html=True)
                         
                         st.image(annotated, use_container_width=True)
                         st.success(f"✅ Detected: **{label}** (Confidence: {confidence*100:.1f}%)")
@@ -218,7 +244,18 @@ with col1:
                     st.session_state.detection_count += 1
                     
                     if st.session_state.voice_enabled:
+                        # Try system voice (local only)
                         threading.Thread(target=speak_gesture, args=(label,), daemon=True).start()
+                        # Also use browser speech synthesis (works on cloud!)
+                        st.markdown(f"""
+                        <script>
+                            if ('speechSynthesis' in window) {{
+                                var msg = new SpeechSynthesisUtterance('{label}');
+                                msg.rate = 1.0;
+                                window.speechSynthesis.speak(msg);
+                            }}
+                        </script>
+                        """, unsafe_allow_html=True)
                     
                     st.image(annotated, use_container_width=True)
                     st.success(f"✅ Detected: **{label}** (Confidence: {confidence*100:.1f}%)")
